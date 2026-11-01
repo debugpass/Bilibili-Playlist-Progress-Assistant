@@ -1,14 +1,18 @@
 // ==UserScript==
-// @name         Bilibili 播放列表总时长定位
+// @name         Bilibili Playlist Progress Assistant
 // @namespace    local.bilibili.bili-part-process-tampermonkey
-// @version      1.2.0
-// @description  在 B 站视频页面右栏选集下方,显示当前视频在整个选集列表总时长中的位置
+// @version      1.2.5
+// @author       debugpass
+// @copyright    2026, debugpass (https://github.com/debugpass)
+// @description  B站合集进度助手。一个用于 B 站视频页面的油猴脚本：读取右侧选集的时长，展示当前视频在整个列表总时长中的位置。在 B 站视频页面右栏选集下面显示当前视频在整个选集列表总时长中的位置
 // @match        https://www.bilibili.com/video/*
 // @run-at       document-idle
 // @license      MIT
 // @grant        none
-// @downloadURL 
-// @updateURL 
+// @icon            https://cdn.jsdelivr.net/gh/the1812/Bilibili-Evolved@preview/images/logo-small.png
+// @icon64          https://cdn.jsdelivr.net/gh/the1812/Bilibili-Evolved@preview/images/logo.png
+// @downloadURL https://update.greasyfork.org/scripts/603280/Bilibili%20Playlist%20Progress%20Assistant.user.js
+// @updateURL https://update.greasyfork.org/scripts/603280/Bilibili%20Playlist%20Progress%20Assistant.meta.js
 // ==/UserScript==
 
 (function () {
