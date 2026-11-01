@@ -21,10 +21,6 @@
 3. 将 [bili-part-process-tampermonkey.js](./bili-part-process-tampermonkey.js) 的完整内容复制到编辑器中，替换默认内容并保存。
 4. 打开或刷新 `https://www.bilibili.com/video/` 下的视频页面。
 
-更新本仓库版本时，将脚本内容重新复制到油猴编辑器中并保存，再刷新视频页面。
-
-脚本元数据中的 `@downloadURL` 和 `@updateURL` 指向 Greasy Fork。若需长期使用本仓库的修改版本，可在油猴中关闭此脚本的自动更新，避免被发布版本覆盖。
-
 ## 使用说明
 
 面板示例：
@@ -47,6 +43,14 @@
 
 没有检测到选集时，手动展开会显示“未检测到视频选集”。
 
+## 示例图
+
+![展示时效果](README.assets/屏幕截图 2026-11-01 192149-1793533315430-2.png)
+
+![隐藏时效果](README.assets/屏幕截图 2026-11-01 192604.png)
+
+![设置进度更新时间](README.assets/屏幕截图 2026-11-01 192544.png)
+
 ## 兼容性与限制
 
 - 当前通过 `.video-pod__body .video-pod__item` 读取选集，依赖 B 站页面的 DOM 结构；其他列表结构可能无法识别。
@@ -66,6 +70,12 @@ node --test tests/progress.test.cjs
 
 修改后建议在浏览器中验证：多集默认展开、单集默认收起、关闭与恢复、切换选集、按钮文字在页面更新后仍可见、全屏切换，以及刷新间隔切换、设置记忆和拖动进度条后同步。
 
-## 许可证
+## 许可
 
-本项目采用 [MIT License](./LICENSE)。
+本项目基于Bilibili 播放列表总时长定位，遵循MIT，完整许可见 [MIT License](./LICENSE)。
+
+原项目：https://greasyfork.org/zh-CN/scripts/594182-bilibili-%E6%92%AD%E6%94%BE%E5%88%97%E8%A1%A8%E6%80%BB%E6%97%B6%E9%95%BF%E5%AE%9A%E4%BD%8D
+
+## 致谢
+
+- Sycml 与 Bilibili 播放列表总时长定位脚本 贡献者。

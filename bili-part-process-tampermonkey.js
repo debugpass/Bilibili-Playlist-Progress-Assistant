@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Bilibili 播放列表总时长定位
-// @namespace    local.bilibili.playlist-position
+// @namespace    local.bilibili.bili-part-process-tampermonkey
 // @version      1.2.0
-// @description  在 B 站视频页面右栏精选区显示当前视频在整个选集列表总时长中的位置
+// @description  在 B 站视频页面右栏选集下方,显示当前视频在整个选集列表总时长中的位置
 // @match        https://www.bilibili.com/video/*
 // @run-at       document-idle
 // @license      MIT
 // @grant        none
-// @downloadURL https://update.greasyfork.org/scripts/594182/Bilibili%20%E6%92%AD%E6%94%BE%E5%88%97%E8%A1%A8%E6%80%BB%E6%97%B6%E9%95%BF%E5%AE%9A%E4%BD%8D.user.js
-// @updateURL https://update.greasyfork.org/scripts/594182/Bilibili%20%E6%92%AD%E6%94%BE%E5%88%97%E8%A1%A8%E6%80%BB%E6%97%B6%E9%95%BF%E5%AE%9A%E4%BD%8D.meta.js
+// @downloadURL 
+// @updateURL 
 // ==/UserScript==
 
 (function () {
