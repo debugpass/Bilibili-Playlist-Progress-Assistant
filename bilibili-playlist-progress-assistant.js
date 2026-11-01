@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bilibili Playlist Progress Assistant
-// @namespace    local.bilibili.bili-part-process-tampermonkey
+// @namespace    https://github.com/debugpass
 // @version      1.2.5
 // @author       debugpass
 // @copyright    2026, debugpass (https://github.com/debugpass)
