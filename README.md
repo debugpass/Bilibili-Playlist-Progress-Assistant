@@ -1,4 +1,6 @@
-# Bilibili 播放列表总时长定位
+# B站合集进度助手
+
+Bilibili Playlist Progress Assistant
 
 一个用于 B 站视频页面的油猴脚本：读取右侧选集的时长，展示当前视频在整个列表总时长中的位置。
 
@@ -18,7 +20,7 @@
 
 1. 在浏览器中安装 Tampermonkey（油猴）。
 2. 打开 Tampermonkey 管理面板，选择“添加新脚本”。
-3. 将 [bili-part-process-tampermonkey.js](./bili-part-process-tampermonkey.js) 的完整内容复制到编辑器中，替换默认内容并保存。
+3. 将 [bilibili-playlist-progress-assistant.js](./bilibili-playlist-progress-assistant.js) 的完整内容复制到编辑器中，替换默认内容并保存。
 4. 打开或刷新 `https://www.bilibili.com/video/` 下的视频页面。
 
 ## 使用说明
@@ -45,7 +47,9 @@
 
 ## 示例图
 
-![展示时效果](README.assets/屏幕截图 2026-11-01 192149-1793533315430-2.png)
+![B站合集进度助手](README.assets/屏幕截图 2026-11-01 192051.png)
+
+![展示时效果](README.assets/屏幕截图 2026-11-01 192149.png)
 
 ![隐藏时效果](README.assets/屏幕截图 2026-11-01 192604.png)
 
@@ -64,7 +68,7 @@
 安装 Node.js 后可执行语法检查：
 
 ```sh
-node --check bili-part-process-tampermonkey.js
+node --check bilibili-playlist-progress-assistant.js
 node --test tests/progress.test.cjs
 ```
 
