@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Playlist Progress Assistant
 // @namespace    https://github.com/debugpass
-// @version      1.2.5
+// @version      1.2.8
 // @author       debugpass
 // @copyright    2026, debugpass (https://github.com/debugpass)
 // @description  B站合集进度助手。一个用于 B 站视频页面的油猴脚本：读取右侧选集的时长，展示当前视频在整个列表总时长中的位置。在 B 站视频页面右栏选集下面显示当前视频在整个选集列表总时长中的位置
@@ -105,9 +105,18 @@
     return Number.isInteger(p) && p > 0 && p <= items.length ? p - 1 : 0;
   }
 
+  function isScriptNode(node) {
+    return !!node && (node === panelRef || node === restoreRef ||
+      !!(panelRef && panelRef.contains(node)) || !!(restoreRef && restoreRef.contains(node)));
+  }
+
+  function findPageElement(root, selector) {
+    return [...root.querySelectorAll(selector)].find((node) => !isScriptNode(node)) || null;
+  }
+
   function getContainers() {
     for (const selector of CONTAINER_SELECTORS) {
-      const containers = [...document.querySelectorAll(selector)];
+      const containers = [...document.querySelectorAll(selector)].filter((node) => !isScriptNode(node));
       if (containers.length) return containers;
     }
     return [];
@@ -116,24 +125,39 @@
   function getMountPoint() {
     const containers = getContainers();
     for (const container of containers) {
-      const tab = container.querySelector(ANCHOR_SELECTOR);
+      const tab = findPageElement(container, ANCHOR_SELECTOR);
       if (tab) {
-        let anchor = tab.querySelector(FALLBACK_ANCHOR_SELECTOR);
+        let anchor = findPageElement(tab, FALLBACK_ANCHOR_SELECTOR);
         // 即使选集被额外包裹，也把面板放在 rcmd-tab 的直接子级。
         while (anchor && anchor.parentElement !== tab) anchor = anchor.parentElement;
-        return { container: tab, anchor };
+        if (anchor) return { container: tab, anchor };
+        // 没有选集时放在右栏内、rcmd-tab 之前，避免改动其内部占位节点。
+        let before = tab;
+        while (before.parentElement !== container) before = before.parentElement;
+        return { container, before };
       }
     }
     if (!containers.length) return null;
     const container = containers[0];
-    return { container, anchor: container.querySelector(FALLBACK_ANCHOR_SELECTOR) };
+    return { container, anchor: findPageElement(container, FALLBACK_ANCHOR_SELECTOR) };
+  }
+
+  function isSafeMount(mount) {
+    return !!mount && !isScriptNode(mount.container) &&
+      !isScriptNode(mount.before) && !isScriptNode(mount.anchor);
   }
 
   function isMountedAt(mount) {
     const panel = panelRef;
     const restore = restoreRef;
     if (!panel || !panel.isConnected || !restore || !restore.isConnected) return false;
-    if (!mount) return false;
+    if (!isSafeMount(mount)) return false;
+    if (mount.before) {
+      return panel.parentElement === mount.container &&
+        restore.parentElement === mount.container &&
+        restore.previousElementSibling === panel &&
+        restore.nextElementSibling === mount.before;
+    }
     if (mount.anchor) {
       return panel.parentElement === mount.anchor.parentElement &&
         panel.previousElementSibling === mount.anchor &&
@@ -151,10 +175,12 @@
     const restore = restoreRef;
     if (!panel || !restore) return false;
     const mount = getMountPoint();
-    if (!mount) return false;
+    if (!isSafeMount(mount)) return false;
     if (isMountedAt(mount)) return true;
 
-    if (mount.anchor) {
+    if (mount.before) {
+      mount.before.insertAdjacentElement('beforebegin', panel);
+    } else if (mount.anchor) {
       mount.anchor.insertAdjacentElement('afterend', panel);
     } else {
       mount.container.prepend(panel);
@@ -207,6 +233,11 @@
         gap: 2px;
       }
       #${PANEL_ID} .bili-pp-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 24px;
+        user-select: none;
         padding: 0 4px;
         color: var(--text3, #9499a0);
         background: transparent;
@@ -233,6 +264,8 @@
         font: 12px/1.5 ${FONT_FAMILY};
       }
       #${PANEL_ID} .bili-pp-back {
+        display: inline-flex;
+        user-select: none;
         padding: 5px 10px;
         border: 1px solid var(--line_regular, #e3e5e7);
         border-radius: 4px;
@@ -242,6 +275,7 @@
         font: 13px/1.4 ${FONT_FAMILY};
       }
       #${RESTORE_ID} {
+        user-select: none;
         display: none;
         width: 100%;
         box-sizing: border-box;
@@ -259,6 +293,11 @@
       #${RESTORE_ID}:hover {
         color: var(--brand_blue, #00aeec);
         border-color: var(--brand_blue, #00aeec);
+      }
+      #${PANEL_ID} [role="button"]:focus-visible,
+      #${RESTORE_ID}:focus-visible {
+        outline: 2px solid var(--brand_blue, #00aeec);
+        outline-offset: 2px;
       }
       #${PANEL_ID} .bili-pp-title {
         margin-bottom: 5px;
@@ -290,14 +329,27 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function bindAction(element, action) {
+    element.setAttribute('role', 'button');
+    element.setAttribute('tabindex', '0');
+    element.setAttribute('aria-label', element.title || element.textContent);
+    element.addEventListener('click', action);
+    element.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) action();
+    });
+  }
+
   function buildPanel() {
     injectStyle();
 
     const panel = document.createElement('div');
     panel.id = PANEL_ID;
     panel.innerHTML = '<div class="bili-pp-actions">' +
-      '<button class="bili-pp-action bili-pp-open-settings" type="button" title="设置刷新间隔" aria-expanded="false" aria-controls="bili-pp-settings-view"><svg t="1793528976479" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9654" width="20" height="20"><path d="M509.387755 666.122449c-83.591837 0-151.510204-67.918367-151.510204-151.510204s67.918367-151.510204 151.510204-151.510204 151.510204 67.918367 151.510204 151.510204-67.918367 151.510204-151.510204 151.510204z m0-261.22449c-60.604082 0-109.714286 49.110204-109.714286 109.714286s49.110204 109.714286 109.714286 109.714286 109.714286-49.110204 109.714286-109.714286-49.110204-109.714286-109.714286-109.714286z" fill="#707070" p-id="9655"></path><path d="M556.408163 929.959184h-83.591836c-47.542857 0-86.204082-38.661224-86.204082-86.204082v-22.987755c0-1.044898-0.522449-2.089796-1.567347-2.612245h-0.522449c-1.044898-0.522449-2.089796 0-3.134694 0.522449l-14.628571 15.15102c-16.195918 16.195918-37.093878 25.077551-59.559184 25.077551-22.465306 0-43.363265-8.881633-59.036735-24.555102l-59.036734-59.036734c-32.391837-32.391837-32.391837-85.159184 0-118.07347l15.673469-15.15102c1.044898-1.044898 1.044898-2.089796 0.522449-3.134694v-0.522449c-0.522449-1.044898-1.567347-1.567347-2.612245-1.567347h-22.987755c-47.542857 0-86.204082-38.661224-86.204082-86.204082v-78.367346c0.522449-47.020408 39.183673-85.681633 86.726531-85.681633h21.420408c1.044898 0 2.089796-0.522449 2.612245-2.089796 0.522449-1.044898 1.044898-2.612245 1.567347-3.657143 0.522449-1.044898 0-2.089796-0.522449-3.134694l-16.195918-16.718367C156.734694 329.142857 156.734694 275.853061 189.126531 243.461224l59.036734-59.036734c15.673469-15.673469 36.571429-24.555102 59.036735-24.555102 22.465306 0 43.363265 8.881633 59.036735 24.555102l15.15102 15.673469c0.522449 1.044898 2.089796 1.044898 3.134694 0.522449h0.522449c1.044898-0.522449 1.567347-1.567347 1.567347-2.612245v-17.763265C386.612245 132.702041 425.273469 94.040816 472.816327 94.040816h83.591836c44.408163 0 80.979592 36.571429 80.979592 80.979592v21.420408c0 1.044898 0.522449 2.089796 2.089796 2.612245 1.567347 0.522449 2.612245 1.044898 3.657143 1.567347 1.044898 0.522449 2.089796 0 3.134694-0.522449l16.718367-16.195918c32.391837-32.391837 85.159184-32.391837 118.073469 0.522449l59.036735 59.036734c15.673469 15.673469 24.555102 36.571429 24.555102 59.036735 0 22.465306-8.881633 43.363265-24.555102 59.036735l-15.673469 16.195918c-0.522449 0.522449-1.044898 2.089796-0.522449 2.612245 0.522449 1.044898 1.044898 2.612245 1.567347 3.657143 0.522449 1.044898 1.567347 2.089796 2.612245 2.089796h21.420408c44.408163 0 80.979592 36.571429 80.979592 80.979592v88.816326c0 44.408163-36.571429 80.979592-80.979592 80.979592h-22.987755c-1.044898 0-2.089796 0.522449-2.612245 1.567347-0.522449 1.567347-0.522449 2.612245 0.522449 3.657143l15.15102 14.628571c16.195918 16.195918 25.077551 37.093878 24.555102 59.559184 0 22.465306-8.881633 43.363265-24.555102 59.036735l-59.036734 59.036734c-15.673469 15.673469-36.571429 24.555102-59.036735 24.555102s-43.363265-8.881633-59.036735-24.555102l-16.195918-15.673469c-0.522449-0.522449-2.089796-1.044898-2.612245-0.522449-1.044898 0.522449-2.612245 1.044898-3.657143 1.567347-1.044898 0.522449-2.089796 1.567347-2.089796 2.612245v26.644898C637.387755 893.387755 600.816327 929.959184 556.408163 929.959184zM402.285714 780.538776c16.195918 7.314286 26.122449 22.987755 26.122449 40.75102v22.987755c0 24.555102 19.853061 44.408163 44.408164 44.408163h83.591836c21.420408 0 39.183673-17.763265 39.183674-39.183673v-26.644898c0-18.285714 10.971429-34.481633 28.212245-41.27347 1.044898-0.522449 1.567347-0.522449 2.612245-1.044897 16.718367-7.314286 35.526531-3.657143 48.587755 8.881632l16.195918 15.67347c16.718367 16.718367 43.363265 16.718367 59.559184 0l59.036734-59.036735c7.836735-7.836735 12.016327-18.285714 12.016327-29.779592 0-10.971429-4.179592-21.420408-12.016327-29.779592l-14.628571-14.106122c-13.583673-13.061224-17.763265-32.914286-9.926531-50.155102v-0.522449c6.791837-15.673469 22.987755-26.122449 40.751021-26.122449h22.987755c21.420408 0 39.183673-17.763265 39.183673-39.183674v-88.816326c0-21.420408-17.763265-39.183673-39.183673-39.183674h-21.420408c-18.285714 0-34.481633-10.971429-41.27347-28.212245-0.522449-1.044898-0.522449-1.567347-1.044898-2.612245-7.314286-16.718367-3.657143-35.526531 8.881633-48.587755l15.673469-16.195918c7.836735-7.836735 12.538776-18.808163 12.538776-29.779592 0-11.493878-4.179592-21.942857-12.016327-29.779592L751.281633 214.204082c-16.195918-16.195918-42.840816-16.195918-59.036735 0l-17.240816 16.195918c-13.061224 12.538776-32.391837 15.673469-48.587755 8.881633-0.522449-0.522449-1.567347-0.522449-2.612245-1.044898-17.240816-6.791837-28.212245-22.987755-28.212245-41.27347v-21.420408c0-21.420408-17.763265-39.183673-39.183674-39.183673h-83.591836c-24.555102 0-44.408163 19.853061-44.408164 44.408163V198.530612c0 17.763265-10.44898 33.436735-26.644898 40.751021-17.240816 7.836735-37.093878 3.657143-50.155102-9.404082l-15.15102-15.673469c-7.836735-7.836735-18.285714-12.016327-29.257143-12.016327-10.971429 0-21.420408 4.179592-29.257143 12.016327L218.906122 272.718367c-16.195918 16.195918-16.195918 42.840816 0 59.036735l16.195919 17.240816c12.538776 13.061224 16.195918 32.391837 8.881632 48.587755-0.522449 0.522449-0.522449 1.567347-1.044897 2.612245-6.791837 17.240816-22.987755 28.212245-41.27347 28.212245h-21.420408c-24.555102 0-44.408163 19.853061-44.408163 44.408164v78.367346c0 24.555102 19.853061 44.408163 44.408163 44.408164h22.987755c17.763265 0 33.436735 10.44898 40.75102 26.644898v0.522449c7.314286 16.718367 3.657143 37.093878-9.404081 49.632653l-15.67347 15.15102c-16.195918 16.195918-16.195918 42.318367 0 58.514286l59.036735 59.036735c7.836735 7.836735 18.285714 12.016327 29.257143 12.016326 10.971429 0 21.420408-4.179592 29.779592-12.538775l14.106122-14.628572c13.061224-13.583673 32.914286-17.763265 50.155102-9.92653l1.044898 0.522449z" fill="#707070" p-id="9656"></path></svg></button>' +
-      '<button class="bili-pp-action bili-pp-hide" type="button" title="隐藏进度面板"><svg t="1793528955214" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8599" width="16" height="16"><path d="M915.846465 923.410101c-20.169697 20.169697-52.880808 20.169697-73.179798 0L93.026263 173.769697c-20.169697-20.169697-20.169697-52.880808 0-73.179798 20.169697-20.169697 53.010101-20.169697 73.179798 0l749.640404 749.640404c20.169697 20.169697 20.169697 53.010101 0 73.179798z" p-id="8600" fill="#707070"></path><path d="M93.026263 923.410101c-20.169697-20.169697-20.169697-52.880808 0-73.179798L842.666667 100.589899c20.169697-20.169697 52.880808-20.169697 73.179798 0 20.169697 20.169697 20.169697 52.880808 0 73.179798L166.206061 923.410101c-20.169697 20.169697-53.010101 20.169697-73.179798 0z" p-id="8601" fill="#707070"></path></svg></button></div>' +
+      '<span class="bili-pp-action bili-pp-open-settings" title="设置刷新间隔" aria-expanded="false" aria-controls="bili-pp-settings-view"><svg t="1793528976479" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9654" width="20" height="20"><path d="M509.387755 666.122449c-83.591837 0-151.510204-67.918367-151.510204-151.510204s67.918367-151.510204 151.510204-151.510204 151.510204 67.918367 151.510204 151.510204-67.918367 151.510204-151.510204 151.510204z m0-261.22449c-60.604082 0-109.714286 49.110204-109.714286 109.714286s49.110204 109.714286 109.714286 109.714286 109.714286-49.110204 109.714286-109.714286-49.110204-109.714286-109.714286-109.714286z" fill="#707070" p-id="9655"></path><path d="M556.408163 929.959184h-83.591836c-47.542857 0-86.204082-38.661224-86.204082-86.204082v-22.987755c0-1.044898-0.522449-2.089796-1.567347-2.612245h-0.522449c-1.044898-0.522449-2.089796 0-3.134694 0.522449l-14.628571 15.15102c-16.195918 16.195918-37.093878 25.077551-59.559184 25.077551-22.465306 0-43.363265-8.881633-59.036735-24.555102l-59.036734-59.036734c-32.391837-32.391837-32.391837-85.159184 0-118.07347l15.673469-15.15102c1.044898-1.044898 1.044898-2.089796 0.522449-3.134694v-0.522449c-0.522449-1.044898-1.567347-1.567347-2.612245-1.567347h-22.987755c-47.542857 0-86.204082-38.661224-86.204082-86.204082v-78.367346c0.522449-47.020408 39.183673-85.681633 86.726531-85.681633h21.420408c1.044898 0 2.089796-0.522449 2.612245-2.089796 0.522449-1.044898 1.044898-2.612245 1.567347-3.657143 0.522449-1.044898 0-2.089796-0.522449-3.134694l-16.195918-16.718367C156.734694 329.142857 156.734694 275.853061 189.126531 243.461224l59.036734-59.036734c15.673469-15.673469 36.571429-24.555102 59.036735-24.555102 22.465306 0 43.363265 8.881633 59.036735 24.555102l15.15102 15.673469c0.522449 1.044898 2.089796 1.044898 3.134694 0.522449h0.522449c1.044898-0.522449 1.567347-1.567347 1.567347-2.612245v-17.763265C386.612245 132.702041 425.273469 94.040816 472.816327 94.040816h83.591836c44.408163 0 80.979592 36.571429 80.979592 80.979592v21.420408c0 1.044898 0.522449 2.089796 2.089796 2.612245 1.567347 0.522449 2.612245 1.044898 3.657143 1.567347 1.044898 0.522449 2.089796 0 3.134694-0.522449l16.718367-16.195918c32.391837-32.391837 85.159184-32.391837 118.073469 0.522449l59.036735 59.036734c15.673469 15.673469 24.555102 36.571429 24.555102 59.036735 0 22.465306-8.881633 43.363265-24.555102 59.036735l-15.673469 16.195918c-0.522449 0.522449-1.044898 2.089796-0.522449 2.612245 0.522449 1.044898 1.044898 2.612245 1.567347 3.657143 0.522449 1.044898 1.567347 2.089796 2.612245 2.089796h21.420408c44.408163 0 80.979592 36.571429 80.979592 80.979592v88.816326c0 44.408163-36.571429 80.979592-80.979592 80.979592h-22.987755c-1.044898 0-2.089796 0.522449-2.612245 1.567347-0.522449 1.567347-0.522449 2.612245 0.522449 3.657143l15.15102 14.628571c16.195918 16.195918 25.077551 37.093878 24.555102 59.559184 0 22.465306-8.881633 43.363265-24.555102 59.036735l-59.036734 59.036734c-15.673469 15.673469-36.571429 24.555102-59.036735 24.555102s-43.363265-8.881633-59.036735-24.555102l-16.195918-15.673469c-0.522449-0.522449-2.089796-1.044898-2.612245-0.522449-1.044898 0.522449-2.612245 1.044898-3.657143 1.567347-1.044898 0.522449-2.089796 1.567347-2.089796 2.612245v26.644898C637.387755 893.387755 600.816327 929.959184 556.408163 929.959184zM402.285714 780.538776c16.195918 7.314286 26.122449 22.987755 26.122449 40.75102v22.987755c0 24.555102 19.853061 44.408163 44.408164 44.408163h83.591836c21.420408 0 39.183673-17.763265 39.183674-39.183673v-26.644898c0-18.285714 10.971429-34.481633 28.212245-41.27347 1.044898-0.522449 1.567347-0.522449 2.612245-1.044897 16.718367-7.314286 35.526531-3.657143 48.587755 8.881632l16.195918 15.67347c16.718367 16.718367 43.363265 16.718367 59.559184 0l59.036734-59.036735c7.836735-7.836735 12.016327-18.285714 12.016327-29.779592 0-10.971429-4.179592-21.420408-12.016327-29.779592l-14.628571-14.106122c-13.583673-13.061224-17.763265-32.914286-9.926531-50.155102v-0.522449c6.791837-15.673469 22.987755-26.122449 40.751021-26.122449h22.987755c21.420408 0 39.183673-17.763265 39.183673-39.183674v-88.816326c0-21.420408-17.763265-39.183673-39.183673-39.183674h-21.420408c-18.285714 0-34.481633-10.971429-41.27347-28.212245-0.522449-1.044898-0.522449-1.567347-1.044898-2.612245-7.314286-16.718367-3.657143-35.526531 8.881633-48.587755l15.673469-16.195918c7.836735-7.836735 12.538776-18.808163 12.538776-29.779592 0-11.493878-4.179592-21.942857-12.016327-29.779592L751.281633 214.204082c-16.195918-16.195918-42.840816-16.195918-59.036735 0l-17.240816 16.195918c-13.061224 12.538776-32.391837 15.673469-48.587755 8.881633-0.522449-0.522449-1.567347-0.522449-2.612245-1.044898-17.240816-6.791837-28.212245-22.987755-28.212245-41.27347v-21.420408c0-21.420408-17.763265-39.183673-39.183674-39.183673h-83.591836c-24.555102 0-44.408163 19.853061-44.408164 44.408163V198.530612c0 17.763265-10.44898 33.436735-26.644898 40.751021-17.240816 7.836735-37.093878 3.657143-50.155102-9.404082l-15.15102-15.673469c-7.836735-7.836735-18.285714-12.016327-29.257143-12.016327-10.971429 0-21.420408 4.179592-29.257143 12.016327L218.906122 272.718367c-16.195918 16.195918-16.195918 42.840816 0 59.036735l16.195919 17.240816c12.538776 13.061224 16.195918 32.391837 8.881632 48.587755-0.522449 0.522449-0.522449 1.567347-1.044897 2.612245-6.791837 17.240816-22.987755 28.212245-41.27347 28.212245h-21.420408c-24.555102 0-44.408163 19.853061-44.408163 44.408164v78.367346c0 24.555102 19.853061 44.408163 44.408163 44.408164h22.987755c17.763265 0 33.436735 10.44898 40.75102 26.644898v0.522449c7.314286 16.718367 3.657143 37.093878-9.404081 49.632653l-15.67347 15.15102c-16.195918 16.195918-16.195918 42.318367 0 58.514286l59.036735 59.036735c7.836735 7.836735 18.285714 12.016327 29.257143 12.016326 10.971429 0 21.420408-4.179592 29.779592-12.538775l14.106122-14.628572c13.061224-13.583673 32.914286-17.763265 50.155102-9.92653l1.044898 0.522449z" fill="#707070" p-id="9656"></path></svg></span>' +
+      '<span class="bili-pp-action bili-pp-hide" title="隐藏进度面板"><svg t="1793528955214" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8599" width="16" height="16"><path d="M915.846465 923.410101c-20.169697 20.169697-52.880808 20.169697-73.179798 0L93.026263 173.769697c-20.169697-20.169697-20.169697-52.880808 0-73.179798 20.169697-20.169697 53.010101-20.169697 73.179798 0l749.640404 749.640404c20.169697 20.169697 20.169697 53.010101 0 73.179798z" p-id="8600" fill="#707070"></path><path d="M93.026263 923.410101c-20.169697-20.169697-20.169697-52.880808 0-73.179798L842.666667 100.589899c20.169697-20.169697 52.880808-20.169697 73.179798 0 20.169697 20.169697 20.169697 52.880808 0 73.179798L166.206061 923.410101c-20.169697 20.169697-53.010101 20.169697-73.179798 0z" p-id="8601" fill="#707070"></path></svg></span></div>' +
       '<div class="bili-pp-content"><div class="bili-pp-title">正在读取选集…</div>' +
       '<div class="bili-pp-line bili-pp-episode"></div>' +
       '<div class="bili-pp-line bili-pp-current"></div>' +
@@ -313,7 +365,7 @@
       '<option value="60000">1 分钟</option></select>' +
       '<p class="bili-pp-settings-note">修改后立即生效并自动记忆。关闭仅停止定时刷新，拖动进度条后仍会更新。</p>' +
       '<p class="bili-pp-settings-note bili-pp-save-status" role="status"></p>' +
-      '<button class="bili-pp-back" type="button">返回进度</button></div>';
+      '<span class="bili-pp-back">返回进度</span></div>';
 
     const settingsButton = panel.querySelector('.bili-pp-open-settings');
     const settingsView = panel.querySelector('.bili-pp-settings');
@@ -326,8 +378,8 @@
       if (visible) intervalSelect.focus();
       else settingsButton.focus();
     };
-    settingsButton.addEventListener('click', () => showSettings(settingsView.hidden));
-    panel.querySelector('.bili-pp-back').addEventListener('click', () => {
+    bindAction(settingsButton, () => showSettings(settingsView.hidden));
+    bindAction(panel.querySelector('.bili-pp-back'), () => {
       showSettings(false);
       update();
     });
@@ -347,17 +399,16 @@
       update();
     });
 
-    const restore = document.createElement('button');
+    const restore = document.createElement('div');
     restore.id = RESTORE_ID;
-    restore.type = 'button';
     restore.textContent = RESTORE_TEXT;
     restore.title = RESTORE_TEXT;
 
-    panel.querySelector('.bili-pp-hide').addEventListener('click', () => {
+    bindAction(panel.querySelector('.bili-pp-hide'), () => {
       manuallyHidden = true;
       syncVisibility();
     });
-    restore.addEventListener('click', () => {
+    bindAction(restore, () => {
       manuallyHidden = false;
       update();
     });
@@ -393,15 +444,17 @@
     // rcmd-tab 的动态渲染可能清空插入按钮的文字；仅在丢失时恢复，避免观察器循环。
     if (restore.textContent !== RESTORE_TEXT) restore.textContent = RESTORE_TEXT;
     if (!panel.isConnected) {
-      panel.style.display = 'none';
-      restore.style.display = 'none';
+      if (panel.style.display !== 'none') panel.style.display = 'none';
+      if (restore.style.display !== 'none') restore.style.display = 'none';
       return;
     }
     const fullscreen = isWebFullscreen();
     // 列表异步加载时先收起，检测到多集后自动展开；手动选择优先。
     const hidden = manuallyHidden ?? (document.querySelectorAll(ITEM_SELECTOR).length <= 1);
-    panel.style.display = fullscreen || hidden ? 'none' : 'block';
-    restore.style.display = !fullscreen && hidden ? 'block' : 'none';
+    const panelDisplay = fullscreen || hidden ? 'none' : 'block';
+    const restoreDisplay = !fullscreen && hidden ? 'block' : 'none';
+    if (panel.style.display !== panelDisplay) panel.style.display = panelDisplay;
+    if (restore.style.display !== restoreDisplay) restore.style.display = restoreDisplay;
   }
 
   function update() {
@@ -505,6 +558,8 @@
     };
 
     const observer = new MutationObserver((records) => {
+      // 自己的文字、进度条更新不参与页面结构检查。外部移除面板仍需处理。
+      if (records.length && records.every((record) => isScriptNode(record.target))) return;
       const playlist = document.querySelector('.video-pod__body');
       const itemCount = playlist ? playlist.querySelectorAll('.video-pod__item').length : 0;
       const activeChanged = records.some((record) => {
@@ -525,6 +580,26 @@
     observer.observe(document.body, { childList: true, characterData: true, subtree: true });
   }
 
-  if (document.body) start();
-  else window.addEventListener('DOMContentLoaded', start, { once: true });
+  function waitForPageReady() {
+    // document-idle / load 都不代表 Vue 已接管服务端 HTML。
+    // 只读检查真实右栏及其祖先组件的挂载状态，完成前不插入任何节点。
+    let mounted = false;
+    if (document.readyState === 'complete') {
+      for (const container of getContainers()) {
+        let foundInstance = false;
+        let pending = false;
+        for (let node = container; node; node = node.parentElement) {
+          const instance = node.__vue__;
+          if (!instance) continue;
+          foundInstance = true;
+          if (!instance._isMounted || instance._isDestroyed) pending = true;
+        }
+        if (foundInstance && !pending) mounted = true;
+      }
+    }
+    if (mounted) start();
+    else window.setTimeout(waitForPageReady, 250);
+  }
+
+  waitForPageReady();
 })();
